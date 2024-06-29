@@ -99,6 +99,8 @@ void CGameContext::Construct(int Resetting)
 	m_NumMutes = 0;
 	m_NumVoteMutes = 0;
 
+	m_ModGameType = -1;
+
 	m_LatestLog = 0;
 	mem_zero(&m_aLogs, sizeof(m_aLogs));
 
@@ -613,6 +615,9 @@ void CGameContext::SendChat(int ChatterClientId, int Team, const char *pText, in
 	else
 		str_format(aBuf, sizeof(aBuf), "*** %s", aText);
 	Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, Team != TEAM_ALL ? "teamchat" : "chat", aBuf);
+
+	if(ChatterClientId != -1 && m_apPlayers[ChatterClientId] && m_apPlayers[ChatterClientId]->GetTeam() == TEAM_SPECTATORS && (m_ModGameType == GAMETYPE_HIDDEN || m_ModGameType == GAMETYPE_HIDDENDEATH))
+		Team = 1;
 
 	if(Team == TEAM_ALL)
 	{
@@ -3840,10 +3845,7 @@ void CGameContext::OnInit(const void *pPersistentData)
 		}
 	}
 
-	if(!str_comp(Config()->m_SvGametype, "mod"))
-		m_pController = new CGameControllerMod(this);
-	else
-		m_pController = new CGameControllerDDRace(this);
+	m_pController = new CGameControllerMod(this);
 
 	const char *pCensorFilename = "censorlist.txt";
 	IOHANDLE File = Storage()->OpenFile(pCensorFilename, IOFLAG_READ | IOFLAG_SKIP_BOM, IStorage::TYPE_ALL);
@@ -4839,6 +4841,9 @@ bool CGameContext::RateLimitPlayerVote(int ClientId)
 
 bool CGameContext::RateLimitPlayerMapVote(int ClientId) const
 {
+	if(Server()->Tick() >= m_pController->RoundStartTick() + g_Config.m_SvReservedTime * Server()->TickSpeed())
+		return true;
+
 	if(!Server()->GetAuthedState(ClientId) && time_get() < m_LastMapVote + (time_freq() * g_Config.m_SvVoteMapTimeDelay))
 	{
 		char aChatmsg[512] = {0};

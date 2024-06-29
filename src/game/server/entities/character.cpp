@@ -138,6 +138,11 @@ void CCharacter::SetSolo(bool Solo)
 	Teams()->m_Core.SetSolo(m_pPlayer->GetCid(), Solo);
 }
 
+void CCharacter::SetHidden(bool Hidden)
+{
+	m_Hidden = Hidden;
+}
+
 void CCharacter::SetSuper(bool Super)
 {
 	m_Core.m_Super = Super;
@@ -443,9 +448,6 @@ void CCharacter::FireWeapon()
 
 		Antibot()->OnHammerFire(m_pPlayer->GetCid());
 
-		if(m_Core.m_HammerHitDisabled)
-			break;
-
 		CEntity *apEnts[MAX_CLIENTS];
 		int Hits = 0;
 		int Num = GameServer()->m_World.FindEntities(ProjStartPos, GetProximityRadius() * 0.5f, apEnts,
@@ -454,6 +456,9 @@ void CCharacter::FireWeapon()
 		for(int i = 0; i < Num; ++i)
 		{
 			auto *pTarget = static_cast<CCharacter *>(apEnts[i]);
+
+			if(pTarget->GetPlayer()->GetTeam() == m_pPlayer->GetTeam() && m_Core.m_HammerHitDisabled)
+				continue;
 
 			//if ((pTarget == this) || Collision()->IntersectLine(ProjStartPos, pTarget->m_Pos, NULL, NULL))
 			if((pTarget == this || (pTarget->IsAlive() && !CanCollide(pTarget->GetPlayer()->GetCid()))))
@@ -973,6 +978,15 @@ void CCharacter::Die(int Killer, int Weapon, bool SendKillMsg)
 	// a nice sound
 	GameServer()->CreateSound(m_Pos, SOUND_PLAYER_DIE, TeamMask());
 
+	if(GameServer()->m_ModGameType == GAMETYPE_HIDDEN)
+	{
+		m_pPlayer->SetForceTeam(TEAM_RED);
+	}
+	else if(GameServer()->m_ModGameType != GAMETYPE_JAIL)
+	{
+		m_pPlayer->m_DeadSpec = true;
+	}
+
 	// this is to rate limit respawning to 3 secs
 	m_pPlayer->m_PreviousDieTick = m_pPlayer->m_DieTick;
 	m_pPlayer->m_DieTick = Server()->Tick();
@@ -990,6 +1004,28 @@ bool CCharacter::TakeDamage(vec2 Force, int Dmg, int From, int Weapon)
 {
 	if(Dmg)
 	{
+		if((Weapon == WEAPON_HAMMER || Weapon == WEAPON_NINJA) && GameServer()->m_apPlayers[From] && GameServer()->m_apPlayers[From]->GetTeam() != m_pPlayer->GetTeam())
+		{
+			bool Skip = false;
+			if(GameServer()->m_ModGameType == GAMETYPE_HIDDEN || GameServer()->m_ModGameType == GAMETYPE_HIDDENDEATH)
+			{
+				if(GameServer()->m_apPlayers[From]->GetTeam() == TEAM_BLUE)
+				{
+					if(Weapon == WEAPON_NINJA)
+					{
+						GameServer()->GetPlayerChar(From)->RemoveNinja();
+						m_pPlayer->SetForceTeam(TEAM_BLUE);
+					}
+					Skip = true;
+				}
+			}
+
+			if(GameServer()->m_ModGameType != GAMETYPE_JAIL && !Skip)
+			{
+				Die(From, Weapon, true);
+				return false;
+			}
+		}
 		SetEmote(EMOTE_PAIN, Server()->Tick() + 500 * Server()->TickSpeed() / 1000);
 	}
 
@@ -1016,6 +1052,9 @@ void CCharacter::SnapCharacter(int SnappingClient, int Id)
 		Tick = m_ReckoningTick;
 		pCore = &m_SendCore;
 	}
+
+	if(m_pPlayer->m_Sleep)
+		Emote = EMOTE_BLINK;
 
 	// change eyes and use ninja graphic if player is frozen
 	if(m_Core.m_DeepFrozen || m_FreezeTime > 0 || m_Core.m_LiveFrozen)
@@ -1148,6 +1187,8 @@ bool CCharacter::CanSnapCharacter(int SnappingClient)
 {
 	if(SnappingClient == SERVER_DEMO_CLIENT)
 		return true;
+	if(SnappingClient != -1 && SnappingClient != m_pPlayer->GetCid() && IsHidden())
+		return false;
 
 	CCharacter *pSnapChar = GameServer()->GetPlayerChar(SnappingClient);
 	CPlayer *pSnapPlayer = GameServer()->m_apPlayers[SnappingClient];
@@ -2157,6 +2198,8 @@ void CCharacter::DDRacePostCoreTick()
 	if(!m_Alive)
 		return;
 
+	SetHidden(false);
+
 	// handle Anti-Skip tiles
 	std::vector<int> vIndices = Collision()->GetMapIndices(m_PrevPos, m_Pos);
 	if(!vIndices.empty())
@@ -2339,6 +2382,7 @@ void CCharacter::DDRaceInit()
 	}
 	m_Core.m_Jumps = 2;
 	m_FreezeHammer = false;
+	m_Hidden = false;
 
 	int Team = Teams()->m_Core.Team(m_Core.m_Id);
 

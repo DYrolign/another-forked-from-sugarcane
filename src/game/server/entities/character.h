@@ -49,6 +49,7 @@ public:
 	void SetWeapon(int W);
 	void SetJetpack(bool Active);
 	void SetSolo(bool Solo);
+	void SetHidden(bool Hidden);
 	void SetSuper(bool Super);
 	void SetLiveFrozen(bool Active);
 	void SetDeepFrozen(bool Active);
@@ -146,6 +147,8 @@ private:
 	int m_Armor;
 
 	int m_TriggeredEvents7;
+
+	bool m_Hidden;
 
 	// the player core for the physics
 	CCharacterCore m_Core;
@@ -260,6 +263,7 @@ public:
 	bool GrenadeHitDisabled() const { return m_Core.m_GrenadeHitDisabled; }
 
 	bool IsSuper() const { return m_Core.m_Super; }
+	bool IsHidden() const { return m_Hidden; }
 
 	CSaveTee &GetLastRescueTeeRef(int Mode = RESCUEMODE_AUTO) { return m_RescueTee[Mode]; }
 };
