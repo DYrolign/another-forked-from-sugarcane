@@ -647,25 +647,28 @@ void CGameClient::OnUpdate()
 
 	RunAI();
 
-	int AliveNum = 0;
-	for(int i = 0; i < MAX_CLIENTS; i++)
+	if(m_Snap.m_pLocalInfo)
 	{
-		if(m_Snap.m_apPlayerInfos[i] && m_Snap.m_apPlayerInfos[i]->m_Team != TEAM_SPECTATORS)
+		int AliveNum = 0;
+		for(int i = 0; i < MAX_CLIENTS; i++)
 		{
-			AliveNum ++;			
+			if(m_Snap.m_apPlayerInfos[i] && m_Snap.m_apPlayerInfos[i]->m_Team != TEAM_SPECTATORS)
+			{
+				AliveNum ++;			
+			}
 		}
-	}
-	
-	if(AliveNum < 2 && m_Snap.m_pLocalInfo->m_Team != TEAM_SPECTATORS)
-	{
-		SendSwitchTeam(TEAM_SPECTATORS);
-	}
-	else if(AliveNum > 1 && m_Snap.m_pLocalInfo->m_Team == TEAM_SPECTATORS)
-	{
-		SendSwitchTeam(TEAM_RED);
-	}
+		
+		if(AliveNum < 2 && m_Snap.m_pLocalInfo->m_Team != TEAM_SPECTATORS)
+		{
+			SendSwitchTeam(TEAM_SPECTATORS);
+		}
+		else if(AliveNum > 1 && m_Snap.m_pLocalInfo->m_Team == TEAM_SPECTATORS)
+		{
+			SendSwitchTeam(TEAM_RED);
+		}
 
-	m_Chat.DoPending();
+		m_Chat.DoPending();
+	}
 
 	// handle mouse movement
 	float x = 0.0f, y = 0.0f;
