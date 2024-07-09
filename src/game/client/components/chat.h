@@ -198,5 +198,7 @@ public:
 	//
 	// It uses team or public chat depending on m_Mode.
 	void SendChatQueued(const char *pLine);
+
+	void DoPending();
 };
 #endif

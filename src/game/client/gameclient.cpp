@@ -80,6 +80,7 @@ int CGameClient::DDNetVersion() const { return DDNET_VERSION_NUMBER; }
 const char *CGameClient::DDNetVersionStr() const { return m_aDDNetVersionStr; }
 const char *CGameClient::GetItemName(int Type) const { return m_NetObjHandler.GetObjName(Type); }
 
+static std::map<std::string, int> s_AIValue;
 void CGameClient::OnConsoleInit()
 {
 	m_pEngine = Kernel()->RequestInterface<IEngine>();
@@ -199,6 +200,8 @@ void CGameClient::OnConsoleInit()
 	Console()->Chain("cl_text_entities_size", ConchainClTextEntitiesSize, this);
 
 	Console()->Chain("cl_menu_map", ConchainMenuMap, this);
+
+	NewAIValue("NeedFire", 0);
 }
 
 void CGameClient::OnInit()
@@ -366,11 +369,303 @@ void CGameClient::OnInit()
 	}
 }
 
+static const char* s_InfectsList[] = {"Bat", "Boomer", "Smoker", "Hunter", "Ghost", 
+	"Spider", "Voodoo", "Undead", "Witch", "Slug", "Ghoul"};
+static bool IsInfect(CGameClient::CClientData *pData)
+{
+	for(auto& InfectName : s_InfectsList)
+	{
+		if(str_find(pData->m_aClan, InfectName))
+			return true;
+	}
+	return false;
+}
+
+static int GetWantedWeapon(CGameClient::CClientData *pData)
+{
+	if(IsInfect(pData))
+		return WEAPON_HAMMER;
+
+	if(str_find(pData->m_aClan, "Medic") || str_find(pData->m_aClan, "Biologist") || str_find(pData->m_aClan, "Hero"))
+	{
+		return WEAPON_SHOTGUN;
+	}
+	else if(str_find(pData->m_aClan, "Engineer"))
+	{
+		return WEAPON_HAMMER;
+	}
+	else if(str_find(pData->m_aClan, "Mercenary"))
+	{
+		return WEAPON_GUN;
+	}
+	else if(str_find(pData->m_aClan, "Scientist"))
+	{
+		return WEAPON_HAMMER;
+	}
+	else if(str_find(pData->m_aClan, "Sniper") || str_find(pData->m_aClan, "Looper"))
+	{
+		return WEAPON_LASER;
+	}
+	else if(str_find(pData->m_aClan, "Soldier"))
+	{
+		return WEAPON_GRENADE;
+	}
+	else if(str_find(pData->m_aClan, "Ninja"))
+	{
+		return WEAPON_GRENADE;
+	}
+	return WEAPON_GUN;
+}
+
+static double s_LastJumpTime = 0;
+static char s_FollowName[16] = "甘箨Bamcane";
+static bool s_InitGoTo = false;
+static vec2 s_GoToPos;
+static int64_t s_LastGoToTime = 0;
+void CGameClient::NewAIValue(const char* pValueName, int DefaultValue)
+{
+	s_AIValue[pValueName] = DefaultValue;
+}
+
+void CGameClient::SetAIValue(const char* pValueName, int Value)
+{
+	dbg_assert(s_AIValue.count(pValueName), "A bot value hasn't be created, but somewhere used it.");
+	s_AIValue[pValueName] = Value;
+}
+
+int CGameClient::GetAIValue(const char* pValueName)
+{
+	if(!s_AIValue.count(pValueName))
+		return 0;
+	return s_AIValue[pValueName]; 
+}
+
+void CGameClient::ChangeFollow(const char* pFollow)
+{
+	dbg_msg("AI", "change to follow %s", s_FollowName);
+	str_copy(s_FollowName, pFollow);
+}
+
+void CGameClient::RunAI()
+{
+	if(!m_Snap.m_pLocalCharacter)
+		return;
+
+	int FollowID = -1;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(str_comp(m_aClients[i].m_aName, s_FollowName) == 0)
+		{
+			if(m_Snap.m_apPlayerInfos[i] && m_Snap.m_apPlayerInfos[i]->m_Team != TEAM_SPECTATORS)
+			{
+				if(m_Snap.m_aCharacters[i].m_Active)
+				{
+					s_InitGoTo = true;
+					FollowID = i;
+					s_GoToPos = vec2(m_Snap.m_aCharacters[i].m_Cur.m_X, m_Snap.m_aCharacters[i].m_Cur.m_Y);
+				}
+			}
+			break;
+		}
+		else 
+		{
+
+		}
+	}
+		
+	// random go to
+	bool NeedReset = absolute(s_GoToPos.y - m_LocalCharacterPos.y) > 320.0f;
+	if((!s_InitGoTo || s_LastGoToTime + time_freq() * 5 < time_get() || NeedReset || distance(m_LocalCharacterPos, s_GoToPos) < 64.0f) && FollowID == -1)
+	{
+		vec2 TestPos = m_LocalCharacterPos + random_direction() * random_float(120.0f, 720.0f);
+		if(!m_GameWorld.Collision()->TestBox(TestPos, vec2(28.0f, 28.0f)))
+		{
+			if(IsInfect(&m_aClients[m_Snap.m_LocalClientId]) || m_GameWorld.Collision()->IntersectLineTeleWeapon(m_LocalCharacterPos, TestPos, nullptr, nullptr, nullptr) != TILE_TELEINWEAPON)
+			{
+				s_GoToPos = TestPos;
+				s_InitGoTo = true;
+				s_LastGoToTime = time_get();
+				dbg_msg("AI", "status go to position %.2f, %.2f", s_GoToPos.x, s_GoToPos.y);
+			}
+		}
+	}
+
+	vec2 HookPos = vec2(m_Snap.m_pLocalCharacter->m_HookX, m_Snap.m_pLocalCharacter->m_HookY);
+
+	mem_zero(&m_Controls.m_aInputData[g_Config.m_ClDummy], sizeof(m_Controls.m_aInputData[g_Config.m_ClDummy]));
+	if(s_InitGoTo)
+	{
+		float DistanceX = absolute(s_GoToPos.x - m_LocalCharacterPos.x);
+		float DistanceY = absolute(s_GoToPos.y - m_LocalCharacterPos.y);
+		
+		if(DistanceX > 64.0f)
+		{
+			if(m_LocalCharacterPos.x < s_GoToPos.x)
+			{
+				m_Controls.m_aInputDirectionLeft[g_Config.m_ClDummy] = 0;
+				m_Controls.m_aInputDirectionRight[g_Config.m_ClDummy] = 1;
+			}
+			else
+			{
+				m_Controls.m_aInputDirectionLeft[g_Config.m_ClDummy] = 1;
+				m_Controls.m_aInputDirectionRight[g_Config.m_ClDummy] = 0;
+			}
+		}
+		else
+		{
+			m_Controls.m_aInputDirectionLeft[g_Config.m_ClDummy] = 0;
+			m_Controls.m_aInputDirectionRight[g_Config.m_ClDummy] = 0;
+		}
+
+		if(DistanceY > 64.0f)
+		{
+			if(m_Snap.m_pLocalCharacter->m_Jumped & 3)
+			{
+				vec2 OutPos;
+				if(m_GameWorld.Collision()->IntersectLine(m_LocalCharacterPos, vec2(s_GoToPos.x + m_Snap.m_pLocalCharacter->m_Direction * 32.0f, s_GoToPos.y), nullptr, &OutPos))
+				{
+					m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX = 0;
+					m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY = m_aTuning[g_Config.m_ClDummy].m_HookLength * 0.8f;
+					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 1;
+					if(m_Snap.m_pLocalCharacter	->m_HookState == HOOK_GRABBED && (m_Snap.m_pLocalCharacter->m_Y < HookPos.y || DistanceX > 48.0f))
+					{
+						m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
+					}
+				}
+				else
+				{
+					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
+				}
+			}
+			else
+			{
+				if(m_LocalCharacterPos.y > s_GoToPos.y
+					&& ((s_LastJumpTime + 0.2f) < time_get() / (float) time_freq()))
+				{
+					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Jump = 1;
+					s_LastJumpTime = time_get() / (float) time_freq();
+				}
+			}
+		}
+		vec2 TargetPos = s_GoToPos - m_LocalCharacterPos;
+		m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX = TargetPos.x;
+		m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY = TargetPos.y;
+	}
+
+	if(m_GameWorld.Collision()->TestBox(m_LocalCharacterPos + vec2(m_Snap.m_pLocalCharacter->m_Direction * 32.0f, 0), vec2(28.0f, 28.0f))
+			&& ((s_LastJumpTime + 0.2f) < time_get() / (float) time_freq()))
+	{
+		m_Controls.m_aInputData[g_Config.m_ClDummy].m_Jump = 1;
+		m_Controls.m_aInputDirectionLeft[g_Config.m_ClDummy] = m_Snap.m_pLocalCharacter->m_Direction == -1;
+		m_Controls.m_aInputDirectionRight[g_Config.m_ClDummy] = m_Snap.m_pLocalCharacter->m_Direction == 1;
+
+		s_LastJumpTime = time_get() / (float) time_freq();
+	}
+
+	int WantedWeapon = GetWantedWeapon(&m_aClients[m_Snap.m_LocalClientId]);
+	if(WantedWeapon != m_Snap.m_pLocalCharacter->m_Weapon)
+		m_Controls.m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = WantedWeapon + 1; // number need + 1;
+	else
+		m_Controls.m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = m_Controls.m_aLastData[g_Config.m_ClDummy].m_WantedWeapon;
+	// infclass attack
+	bool SelfInfect = IsInfect(&m_aClients[m_Snap.m_LocalClientId]);
+	for(int i = 0; i < MAX_CLIENTS; i ++)
+	{
+		if(m_Snap.m_aCharacters[i].m_Active)
+		{
+			if(IsInfect(&m_aClients[i]) == SelfInfect)
+			{
+				if(SelfInfect && absolute(Client()->GameTick(g_Config.m_ClDummy) - m_Snap.m_aCharacters[i].m_Cur.m_AttackTick) < 3)
+				{
+					// infect help!
+					if(str_find(m_aClients[m_Snap.m_LocalClientId].m_aClan, "Boomer"))
+						continue;
+				}
+				// Medic help!
+				else if(str_find(m_aClients[m_Snap.m_LocalClientId].m_aClan, "Medic"))
+				{
+					if(m_Controls.m_aInputData[g_Config.m_ClDummy].m_WantedWeapon != 1)
+						m_Controls.m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = 1; // WEAPON_HAMMER
+				}
+				else continue;
+			}
+			vec2 PlayerPos = vec2(m_Snap.m_aCharacters[i].m_Cur.m_X, m_Snap.m_aCharacters[i].m_Cur.m_Y);
+			if(m_GameWorld.Collision()->IntersectLine(m_LocalCharacterPos, PlayerPos, nullptr, nullptr))
+				continue;
+			
+			if(distance(PlayerPos, m_LocalCharacterPos) < 720.0f)
+			{
+				if((m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_HAMMER 
+					&& distance(PlayerPos, m_LocalCharacterPos) < 64.0f) || 
+					(m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_NINJA
+					&& distance(PlayerPos, m_LocalCharacterPos) < 120.0f) || 
+					m_Snap.m_pLocalCharacter->m_AmmoCount > 0)
+				{
+					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Fire = 1;
+				}
+				else if(SelfInfect)
+				{
+					ChangeFollow(m_aClients[i].m_aName);
+					break;
+				}
+				else if(str_find(m_aClients[m_Snap.m_LocalClientId].m_aClan, "Medic"))
+				{
+					m_Controls.m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = GetWantedWeapon(&m_aClients[m_Snap.m_LocalClientId]) + 1;
+					continue;
+				}
+
+				if(m_Controls.m_aLastData[g_Config.m_ClDummy].m_Fire == 1)
+					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Fire = 0;
+
+				vec2 TargetPos = PlayerPos - m_LocalCharacterPos;
+				if(m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_GRENADE)
+					TargetPos.y -= distance(PlayerPos, m_LocalCharacterPos) ;
+				if(SelfInfect)
+					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 1;
+				if(m_Snap.m_pLocalCharacter->m_HookState == HOOK_GRABBED && distance(HookPos, PlayerPos) > 64.0f)
+					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
+
+				m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX = TargetPos.x;
+				m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY = TargetPos.y;
+				break;
+			}
+		}
+	}
+
+	if(GetAIValue("NeedFire"))
+	{
+		m_Controls.m_aInputData[g_Config.m_ClDummy].m_Fire = 1;
+		SetAIValue("NeedFire", 0);
+	}
+}
+
 void CGameClient::OnUpdate()
 {
 	HandleLanguageChanged();
 
 	CUIElementBase::Init(Ui()); // update static pointer because game and editor use separate UI
+
+	RunAI();
+
+	int AliveNum = 0;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(m_Snap.m_apPlayerInfos[i] && m_Snap.m_apPlayerInfos[i]->m_Team != TEAM_SPECTATORS)
+		{
+			AliveNum ++;			
+		}
+	}
+	
+	if(AliveNum < 2 && m_Snap.m_pLocalInfo->m_Team != TEAM_SPECTATORS)
+	{
+		SendSwitchTeam(TEAM_SPECTATORS);
+	}
+	else if(AliveNum > 1 && m_Snap.m_pLocalInfo->m_Team == TEAM_SPECTATORS)
+	{
+		SendSwitchTeam(TEAM_RED);
+	}
+
+	m_Chat.DoPending();
 
 	// handle mouse movement
 	float x = 0.0f, y = 0.0f;
@@ -874,6 +1169,9 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dumm
 	if(MsgId == NETMSGTYPE_SV_READYTOENTER)
 	{
 		Client()->EnterGame(Conn);
+		m_Chat.EnableMode(0);
+		m_Chat.SendChatQueued("/alwaysrandom 1");
+		m_Chat.SendChatQueued("你好～这里是甘蔗aw! 是甘箨的AI呢!");
 	}
 	else if(MsgId == NETMSGTYPE_SV_EMOTICON)
 	{

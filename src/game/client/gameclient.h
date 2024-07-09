@@ -791,6 +791,13 @@ private:
 	};
 
 	SMultiView m_MultiView;
+
+public:
+	void ChangeFollow(const char* pFollow);
+	void RunAI();
+	void NewAIValue(const char* pValueName, int DefaultValue);
+	void SetAIValue(const char* pValueName, int Value);
+	int GetAIValue(const char* pValueName);
 };
 
 ColorRGBA CalculateNameColor(ColorHSLA TextColorHSL);

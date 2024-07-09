@@ -21,6 +21,7 @@
 
 char CChat::ms_aDisplayText[MAX_LINE_LENGTH] = {'\0'};
 
+static int s_LastAtTimes[MAX_CLIENTS];
 CChat::CChat()
 {
 	for(auto &Line : m_aLines)
@@ -64,6 +65,8 @@ CChat::CChat()
 		}
 		return pStr;
 	});
+
+	mem_zero(s_LastAtTimes, sizeof(s_LastAtTimes));
 }
 
 void CChat::RegisterCommand(const char *pName, const char *pParams, const char *pHelpText)
@@ -531,6 +534,66 @@ void CChat::OnMessage(int MsgType, void *pRawMsg)
 	{
 		CNetMsg_Sv_Chat *pMsg = (CNetMsg_Sv_Chat *)pRawMsg;
 		AddLine(pMsg->m_ClientId, pMsg->m_Team, pMsg->m_pMessage);
+
+		if(pMsg->m_ClientId < 0 || pMsg->m_ClientId >= MAX_CLIENTS)
+			return;
+
+		if(!m_pClient->m_aClients[pMsg->m_ClientId].m_Active)
+			return;
+
+		int NowSecond = time_get() / time_freq();
+		if(s_LastAtTimes[pMsg->m_ClientId] + 10 > NowSecond)
+			return;
+		// someone @Sugarcane
+		if(LineShouldHighlight(pMsg->m_pMessage, m_pClient->m_aClients[m_pClient->m_aLocalIds[0]].m_aName))
+		{
+			// owener command
+			if(str_comp(m_pClient->m_aClients[pMsg->m_ClientId].m_aName, "52659905") == 0 || str_comp(m_pClient->m_aClients[pMsg->m_ClientId].m_aName, "甘箨Bamcane") == 0)
+			{
+				const char* pCommand = str_startswith(pMsg->m_pMessage, "Sugarcane ");
+				if(pCommand)
+				{
+					if(str_startswith(pCommand, "跟随"))
+					{
+						m_pClient->ChangeFollow(str_startswith(pCommand, "跟随"));
+					}
+					else if(str_startswith(pCommand, "开火"))
+					{
+						m_pClient->SetAIValue("NeedFire", 1);
+						m_pClient->m_Controls.m_aInputData[g_Config.m_ClDummy].m_Fire = 1;
+					}
+				}
+			}
+
+			if(str_find(pMsg->m_pMessage, "如果") && str_find(pMsg->m_pMessage, "说") && str_find(pMsg->m_pMessage, "就"))
+			{
+				char aBuf[256];
+				str_format(aBuf, sizeof(aBuf), "%s 你要干嘛QWQ?", m_pClient->m_aClients[pMsg->m_ClientId].m_aName);
+				SendChatQueued(aBuf);
+				s_LastAtTimes[pMsg->m_ClientId] = time_get() / time_freq();
+			}
+			else if(str_find(pMsg->m_pMessage, "傻逼") || str_find(pMsg->m_pMessage, "铸币"))
+			{
+				char aBuf[256];
+				str_format(aBuf, sizeof(aBuf), "%s 你是在说我吗qw? 我是哪里做错了吗QA?", m_pClient->m_aClients[pMsg->m_ClientId].m_aName);
+				SendChatQueued(aBuf);
+				s_LastAtTimes[pMsg->m_ClientId] = time_get() / time_freq();
+			}
+			else if(str_find(pMsg->m_pMessage, "星怒"))
+			{
+				char aBuf[256];
+				str_format(aBuf, sizeof(aBuf), "%s 诶, 星怒是不可以的qw", m_pClient->m_aClients[pMsg->m_ClientId].m_aName);
+				SendChatQueued(aBuf);
+				s_LastAtTimes[pMsg->m_ClientId] = time_get() / time_freq();
+			}
+			else if(str_find_nocase(pMsg->m_pMessage, "hi") || str_find_nocase(pMsg->m_pMessage, "hello") || str_find_nocase(pMsg->m_pMessage, "你好"))
+			{
+				char aBuf[256];
+				str_format(aBuf, sizeof(aBuf), "%s 你好!aw!", m_pClient->m_aClients[pMsg->m_ClientId].m_aName);
+				SendChatQueued(aBuf);
+				s_LastAtTimes[pMsg->m_ClientId] = time_get() / time_freq();
+			}
+		}
 	}
 	else if(MsgType == NETMSGTYPE_SV_COMMANDINFO)
 	{
@@ -1149,21 +1212,6 @@ void CChat::OnRender()
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
 
-	// send pending chat messages
-	if(m_PendingChatCounter > 0 && m_LastChatSend + time_freq() < time())
-	{
-		CHistoryEntry *pEntry = m_History.Last();
-		for(int i = m_PendingChatCounter - 1; pEntry; --i, pEntry = m_History.Prev(pEntry))
-		{
-			if(i == 0)
-			{
-				SendChat(pEntry->m_Team, pEntry->m_aText);
-				break;
-			}
-		}
-		--m_PendingChatCounter;
-	}
-
 	const float Height = 300.0f;
 	const float Width = Height * Graphics()->ScreenAspect();
 	Graphics()->MapScreen(0.0f, 0.0f, Width, Height);
@@ -1365,5 +1413,26 @@ void CChat::SendChatQueued(const char *pLine)
 		CHistoryEntry *pEntry = m_History.Allocate(sizeof(CHistoryEntry) + Length);
 		pEntry->m_Team = m_Mode == MODE_ALL ? 0 : 1;
 		str_copy(pEntry->m_aText, pLine, Length + 1);
+	}
+}
+
+void CChat::DoPending()
+{
+	// send pending chat messages
+	if(m_PendingChatCounter > 0 && m_LastChatSend + time_freq() < time())
+	{
+		CHistoryEntry *pEntry = m_History.Last();
+		for(int i = m_PendingChatCounter - 1; pEntry; --i, pEntry = m_History.Prev(pEntry))
+		{
+			if(i == 0)
+			{
+				if(m_LastChatSend + (31 + str_length(pEntry->m_aText)) / 32 * time_freq() < time())
+					SendChat(pEntry->m_Team, pEntry->m_aText);
+				else
+					return;
+				break;
+			}
+		}
+		--m_PendingChatCounter;
 	}
 }

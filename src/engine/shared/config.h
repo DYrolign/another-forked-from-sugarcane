@@ -14,7 +14,7 @@
 // include protocol for MAX_CLIENT used in config_variables
 #include <engine/shared/protocol.h>
 
-#define CONFIG_FILE "settings_ddnet.cfg"
+#define CONFIG_FILE "settings_sugarcane.cfg"
 #define AUTOEXEC_FILE "autoexec.cfg"
 #define AUTOEXEC_CLIENT_FILE "autoexec_client.cfg"
 #define AUTOEXEC_SERVER_FILE "autoexec_server.cfg"
