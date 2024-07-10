@@ -419,7 +419,6 @@ static int GetWantedWeapon(CGameClient::CClientData *pData)
 
 static double s_LastJumpTime = 0;
 static char s_FollowName[16] = "甘箨Bamcane";
-static bool s_InitGoTo = false;
 static vec2 s_GoToPos;
 static int64_t s_LastGoToTime = 0;
 void CGameClient::NewAIValue(const char* pValueName, int DefaultValue)
@@ -460,7 +459,6 @@ void CGameClient::RunAI()
 			{
 				if(m_Snap.m_aCharacters[i].m_Active)
 				{
-					s_InitGoTo = true;
 					FollowID = i;
 					s_GoToPos = vec2(m_Snap.m_aCharacters[i].m_Cur.m_X, m_Snap.m_aCharacters[i].m_Cur.m_Y);
 				}
@@ -475,7 +473,7 @@ void CGameClient::RunAI()
 		
 	// random go to
 	bool NeedReset = absolute(s_GoToPos.y - m_LocalCharacterPos.y) > 320.0f;
-	if((!s_InitGoTo || s_LastGoToTime + time_freq() * 5 < time_get() || NeedReset || distance(m_LocalCharacterPos, s_GoToPos) < 64.0f) && FollowID == -1)
+	if((s_LastGoToTime + time_freq() * 5 < time_get() || NeedReset || distance(m_LocalCharacterPos, s_GoToPos) < 64.0f) && FollowID == -1)
 	{
 		vec2 TestPos = m_LocalCharacterPos + random_direction() * random_float(120.0f, 720.0f);
 		if(!m_GameWorld.Collision()->TestBox(TestPos, vec2(28.0f, 28.0f)))
@@ -483,7 +481,6 @@ void CGameClient::RunAI()
 			if(IsInfect(&m_aClients[m_Snap.m_LocalClientId]) || m_GameWorld.Collision()->IntersectLineTeleWeapon(m_LocalCharacterPos, TestPos, nullptr, nullptr, nullptr) != TILE_TELEINWEAPON)
 			{
 				s_GoToPos = TestPos;
-				s_InitGoTo = true;
 				s_LastGoToTime = time_get();
 				dbg_msg("AI", "status go to position %.2f, %.2f", s_GoToPos.x, s_GoToPos.y);
 			}
@@ -493,64 +490,62 @@ void CGameClient::RunAI()
 	vec2 HookPos = vec2(m_Snap.m_pLocalCharacter->m_HookX, m_Snap.m_pLocalCharacter->m_HookY);
 
 	mem_zero(&m_Controls.m_aInputData[g_Config.m_ClDummy], sizeof(m_Controls.m_aInputData[g_Config.m_ClDummy]));
-	if(s_InitGoTo)
+	
+	float DistanceX = absolute(s_GoToPos.x - m_LocalCharacterPos.x);
+	float DistanceY = absolute(s_GoToPos.y - m_LocalCharacterPos.y);
+	
+	if(DistanceX > 64.0f)
 	{
-		float DistanceX = absolute(s_GoToPos.x - m_LocalCharacterPos.x);
-		float DistanceY = absolute(s_GoToPos.y - m_LocalCharacterPos.y);
-		
-		if(DistanceX > 64.0f)
+		if(m_LocalCharacterPos.x < s_GoToPos.x)
 		{
-			if(m_LocalCharacterPos.x < s_GoToPos.x)
-			{
-				m_Controls.m_aInputDirectionLeft[g_Config.m_ClDummy] = 0;
-				m_Controls.m_aInputDirectionRight[g_Config.m_ClDummy] = 1;
-			}
-			else
-			{
-				m_Controls.m_aInputDirectionLeft[g_Config.m_ClDummy] = 1;
-				m_Controls.m_aInputDirectionRight[g_Config.m_ClDummy] = 0;
-			}
+			m_Controls.m_aInputDirectionLeft[g_Config.m_ClDummy] = 0;
+			m_Controls.m_aInputDirectionRight[g_Config.m_ClDummy] = 1;
 		}
 		else
 		{
-			m_Controls.m_aInputDirectionLeft[g_Config.m_ClDummy] = 0;
+			m_Controls.m_aInputDirectionLeft[g_Config.m_ClDummy] = 1;
 			m_Controls.m_aInputDirectionRight[g_Config.m_ClDummy] = 0;
 		}
+	}
+	else
+	{
+		m_Controls.m_aInputDirectionLeft[g_Config.m_ClDummy] = 0;
+		m_Controls.m_aInputDirectionRight[g_Config.m_ClDummy] = 0;
+	}
 
-		if(DistanceY > 64.0f)
+	if(DistanceY > 64.0f)
+	{
+		if(m_Snap.m_pLocalCharacter->m_Jumped & 3)
 		{
-			if(m_Snap.m_pLocalCharacter->m_Jumped & 3)
+			vec2 OutPos;
+			if(m_GameWorld.Collision()->IntersectLine(m_LocalCharacterPos, vec2(s_GoToPos.x + m_Snap.m_pLocalCharacter->m_Direction * 32.0f, s_GoToPos.y), nullptr, &OutPos))
 			{
-				vec2 OutPos;
-				if(m_GameWorld.Collision()->IntersectLine(m_LocalCharacterPos, vec2(s_GoToPos.x + m_Snap.m_pLocalCharacter->m_Direction * 32.0f, s_GoToPos.y), nullptr, &OutPos))
-				{
-					m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX = 0;
-					m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY = m_aTuning[g_Config.m_ClDummy].m_HookLength * 0.8f;
-					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 1;
-					if(m_Snap.m_pLocalCharacter	->m_HookState == HOOK_GRABBED && (m_Snap.m_pLocalCharacter->m_Y < HookPos.y || DistanceX > 48.0f))
-					{
-						m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
-					}
-				}
-				else
+				m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX = 0;
+				m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY = m_aTuning[g_Config.m_ClDummy].m_HookLength * 0.8f;
+				m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 1;
+				if(m_Snap.m_pLocalCharacter	->m_HookState == HOOK_GRABBED && (m_Snap.m_pLocalCharacter->m_Y < HookPos.y || DistanceX > 48.0f))
 				{
 					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
 				}
 			}
 			else
 			{
-				if(m_LocalCharacterPos.y > s_GoToPos.y
-					&& ((s_LastJumpTime + 0.2f) < time_get() / (float) time_freq()))
-				{
-					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Jump = 1;
-					s_LastJumpTime = time_get() / (float) time_freq();
-				}
+				m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
 			}
 		}
-		vec2 TargetPos = s_GoToPos - m_LocalCharacterPos;
-		m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX = TargetPos.x;
-		m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY = TargetPos.y;
+		else
+		{
+			if(m_LocalCharacterPos.y > s_GoToPos.y
+				&& ((s_LastJumpTime + 0.2f) < time_get() / (float) time_freq()))
+			{
+				m_Controls.m_aInputData[g_Config.m_ClDummy].m_Jump = 1;
+				s_LastJumpTime = time_get() / (float) time_freq();
+			}
+		}
 	}
+	vec2 TargetPos = s_GoToPos - m_LocalCharacterPos;
+	m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX = TargetPos.x;
+	m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY = TargetPos.y;
 
 	if(m_GameWorld.Collision()->TestBox(m_LocalCharacterPos + vec2(m_Snap.m_pLocalCharacter->m_Direction * 32.0f, 0), vec2(28.0f, 28.0f))
 			&& ((s_LastJumpTime + 0.2f) < time_get() / (float) time_freq()))
@@ -617,7 +612,7 @@ void CGameClient::RunAI()
 				if(m_Controls.m_aLastData[g_Config.m_ClDummy].m_Fire == 1)
 					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Fire = 0;
 
-				vec2 TargetPos = PlayerPos - m_LocalCharacterPos;
+				TargetPos = PlayerPos - m_LocalCharacterPos;
 				if(m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_GRENADE)
 					TargetPos.y -= distance(PlayerPos, m_LocalCharacterPos) ;
 				if(SelfInfect)
