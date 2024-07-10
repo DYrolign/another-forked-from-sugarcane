@@ -568,7 +568,8 @@ void CGameClient::RunAI()
 	{
 		if(m_Snap.m_aCharacters[i].m_Active)
 		{
-			if(IsInfect(&m_aClients[i]) == SelfInfect)
+			bool TargetInfect = IsInfect(&m_aClients[i]);
+			if(TargetInfect == SelfInfect)
 			{
 				if(SelfInfect && absolute(Client()->GameTick(g_Config.m_ClDummy) - m_Snap.m_aCharacters[i].m_Cur.m_AttackTick) < 3)
 				{
@@ -590,6 +591,7 @@ void CGameClient::RunAI()
 			
 			if(distance(PlayerPos, m_LocalCharacterPos) < 720.0f)
 			{
+				TargetPos = PlayerPos - m_LocalCharacterPos;
 				if((m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_HAMMER 
 					&& distance(PlayerPos, m_LocalCharacterPos) < 64.0f) || 
 					(m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_NINJA
@@ -598,9 +600,12 @@ void CGameClient::RunAI()
 				{
 					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Fire = 1;
 				}
-				else if(SelfInfect)
+				else if(SelfInfect && !TargetInfect)
 				{
 					ChangeFollow(m_aClients[i].m_aName);
+					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 1;
+					if(m_Snap.m_pLocalCharacter->m_HookState == HOOK_GRABBED && distance(HookPos, PlayerPos) > 64.0f)
+						m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
 					break;
 				}
 				else if(str_find(m_aClients[m_Snap.m_LocalClientId].m_aClan, "Medic"))
@@ -612,13 +617,8 @@ void CGameClient::RunAI()
 				if(m_Controls.m_aLastData[g_Config.m_ClDummy].m_Fire == 1)
 					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Fire = 0;
 
-				TargetPos = PlayerPos - m_LocalCharacterPos;
 				if(m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_GRENADE)
 					TargetPos.y -= distance(PlayerPos, m_LocalCharacterPos) ;
-				if(SelfInfect)
-					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 1;
-				if(m_Snap.m_pLocalCharacter->m_HookState == HOOK_GRABBED && distance(HookPos, PlayerPos) > 64.0f)
-					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
 
 				m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX = TargetPos.x;
 				m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY = TargetPos.y;
@@ -990,16 +990,6 @@ void CGameClient::OnRender()
 
 	// update the local character and spectate position
 	UpdatePositions();
-
-	// display gfx & client warnings
-	for(SWarning *pWarning : {Graphics()->GetCurWarning(), Client()->GetCurWarning()})
-	{
-		if(pWarning != nullptr && m_Menus.CanDisplayWarning())
-		{
-			m_Menus.PopupWarning(pWarning->m_aWarningTitle[0] == '\0' ? Localize("Warning") : pWarning->m_aWarningTitle, pWarning->m_aWarningMsg, Localize("Ok"), pWarning->m_AutoHide ? 10s : 0s);
-			pWarning->m_WasShown = true;
-		}
-	}
 
 	// render all systems
 	for(auto &pComponent : m_vpAll)
