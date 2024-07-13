@@ -498,7 +498,7 @@ void CGameClient::RunAI()
 		{
 			TestPos = m_LocalCharacterPos + random_direction() * random_float(120.0f, 720.0f);
 		}
-		while(m_GameWorld.Collision()->TestBox(TestPos, vec2(28.0f, 28.0f)));
+		while(m_GameWorld.Collision()->IntersectLine(m_LocalCharacterPos, TestPos, nullptr, nullptr));
 
 		s_GoToPos = TestPos;
 		s_LastGoToTime = time_get();
