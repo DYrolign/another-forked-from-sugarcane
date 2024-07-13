@@ -72,6 +72,24 @@
 #include "prediction/entities/character.h"
 #include "prediction/entities/projectile.h"
 
+#include <random>
+
+namespace AIRandom
+{
+	static std::random_device s_RandomDevice;
+	static std::default_random_engine s_RandomEngine(s_RandomDevice());
+	float random_float(float Min, float Max)
+	{
+		std::uniform_real_distribution<float> Distribution(Min, Max);
+		return Distribution(s_RandomEngine);
+	}
+
+	vec2 random_direction()
+	{
+		return direction(2.0f * pi * random_float(0.0f, 1.0f));
+	}
+};
+
 using namespace std::chrono_literals;
 
 const char *CGameClient::Version() const { return GAME_VERSION; }
@@ -475,16 +493,16 @@ void CGameClient::RunAI()
 	bool NeedReset = absolute(s_GoToPos.y - m_LocalCharacterPos.y) > 320.0f;
 	if((s_LastGoToTime + time_freq() * 5 < time_get() || NeedReset || distance(m_LocalCharacterPos, s_GoToPos) < 64.0f) && FollowID == -1)
 	{
-		vec2 TestPos = m_LocalCharacterPos + random_direction() * random_float(120.0f, 720.0f);
-		if(!m_GameWorld.Collision()->TestBox(TestPos, vec2(28.0f, 28.0f)))
+		vec2 TestPos;
+		do
 		{
-			if(IsInfect(&m_aClients[m_Snap.m_LocalClientId]) || m_GameWorld.Collision()->IntersectLineTeleWeapon(m_LocalCharacterPos, TestPos, nullptr, nullptr, nullptr) != TILE_TELEINWEAPON)
-			{
-				s_GoToPos = TestPos;
-				s_LastGoToTime = time_get();
-				dbg_msg("AI", "status go to position %.2f, %.2f", s_GoToPos.x, s_GoToPos.y);
-			}
+			TestPos = m_LocalCharacterPos + random_direction() * random_float(120.0f, 720.0f);
 		}
+		while(m_GameWorld.Collision()->TestBox(TestPos, vec2(28.0f, 28.0f)));
+
+		s_GoToPos = TestPos;
+		s_LastGoToTime = time_get();
+		dbg_msg("AI", "status go to position %.2f, %.2f", s_GoToPos.x, s_GoToPos.y);
 	}
 
 	vec2 HookPos = vec2(m_Snap.m_pLocalCharacter->m_HookX, m_Snap.m_pLocalCharacter->m_HookY);

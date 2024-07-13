@@ -540,10 +540,6 @@ void CChat::OnMessage(int MsgType, void *pRawMsg)
 
 		if(!m_pClient->m_aClients[pMsg->m_ClientId].m_Active)
 			return;
-
-		int NowSecond = time_get() / time_freq();
-		if(s_LastAtTimes[pMsg->m_ClientId] + 10 > NowSecond)
-			return;
 		// someone @Sugarcane
 		if(LineShouldHighlight(pMsg->m_pMessage, m_pClient->m_aClients[m_pClient->m_aLocalIds[0]].m_aName))
 		{
@@ -565,6 +561,10 @@ void CChat::OnMessage(int MsgType, void *pRawMsg)
 					}
 				}
 			}
+
+			int NowSecond = time_get() / time_freq();
+			if(s_LastAtTimes[pMsg->m_ClientId] + 10 > NowSecond)
+				return;
 
 			if(str_find(pMsg->m_pMessage, "如果") && str_find(pMsg->m_pMessage, "说") && str_find(pMsg->m_pMessage, "就"))
 			{
