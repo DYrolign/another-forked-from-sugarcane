@@ -72,23 +72,7 @@
 #include "prediction/entities/character.h"
 #include "prediction/entities/projectile.h"
 
-#include <random>
-
-namespace AIRandom
-{
-	static std::random_device s_RandomDevice;
-	static std::default_random_engine s_RandomEngine(s_RandomDevice());
-	float random_float(float Min, float Max)
-	{
-		std::uniform_real_distribution<float> Distribution(Min, Max);
-		return Distribution(s_RandomEngine);
-	}
-
-	vec2 random_direction()
-	{
-		return direction(2.0f * pi * random_float(0.0f, 1.0f));
-	}
-};
+#include "things.h"
 
 using namespace std::chrono_literals;
 
@@ -387,16 +371,9 @@ void CGameClient::OnInit()
 	}
 }
 
-static const char* s_InfectsList[] = {"Bat", "Boomer", "Smoker", "Hunter", "Ghost", 
-	"Spider", "Voodoo", "Undead", "Witch", "Slug", "Ghoul"};
 static bool IsInfect(CGameClient::CClientData *pData)
 {
-	for(auto& InfectName : s_InfectsList)
-	{
-		if(str_find(pData->m_aClan, InfectName))
-			return true;
-	}
-	return false;
+	return IsInfect(pData->m_aClan);
 }
 
 static int GetWantedWeapon(CGameClient::CClientData *pData)
@@ -439,120 +416,6 @@ static double s_LastJumpTime = 0;
 static char s_FollowName[16] = "甘箨Bamcane";
 static vec2 s_GoToPos;
 static int64_t s_LastGoToTime = 0;
-namespace AStar
-{
-	class nodevec2
-	{
-	public:
-		int x;
-		int y;
-
-		nodevec2() = default;
-		nodevec2(vec2 pos) :
-			x(pos.x), y(pos.y)
-		{
-		}
-		nodevec2(int nx, int ny) :
-			x(nx), y(ny)
-		{
-		}
-
-		nodevec2 operator-() const { return nodevec2(-x, -y); }
-		nodevec2 operator-(const nodevec2 &vec) const { return nodevec2(x - vec.x, y - vec.y); }
-		nodevec2 operator+(const nodevec2 &vec) const { return nodevec2(x + vec.x, y + vec.y); }
-		nodevec2 operator*(const int rhs) const { return nodevec2(x * rhs, y * rhs); }
-		nodevec2 operator*(const nodevec2 &vec) const { return nodevec2(x * vec.x, y * vec.y); }
-		nodevec2 operator/(const int rhs) const { return nodevec2(x / rhs, y / rhs); }
-		nodevec2 operator/(const nodevec2 &vec) const { return nodevec2(x / vec.x, y / vec.y); }
-
-		const nodevec2 &operator+=(const nodevec2 &vec)
-		{
-			x += vec.x;
-			y += vec.y;
-			return *this;
-		}
-		const nodevec2 &operator-=(const nodevec2 &vec)
-		{
-			x -= vec.x;
-			y -= vec.y;
-			return *this;
-		}
-		const nodevec2 &operator*=(const int rhs)
-		{
-			x *= rhs;
-			y *= rhs;
-			return *this;
-		}
-		const nodevec2 &operator*=(const nodevec2 &vec)
-		{
-			x *= vec.x;
-			y *= vec.y;
-			return *this;
-		}
-		const nodevec2 &operator/=(const int rhs)
-		{
-			x /= rhs;
-			y /= rhs;
-			return *this;
-		}
-		const nodevec2 &operator/=(const nodevec2 &vec)
-		{
-			x /= vec.x;
-			y /= vec.y;
-			return *this;
-		}
-
-		bool operator==(const nodevec2 &vec) const { return x == vec.x && y == vec.y; } //TODO: do this with an eps instead
-		bool operator!=(const nodevec2 &vec) const { return x != vec.x || y != vec.y; }
-		bool operator<(const nodevec2 &vec) const { return x < vec.x || (x == vec.x && y < vec.y); }
-
-		int &operator[](const int index) { return index ? y : x; }
-		vec2 operator()() { return vec2(x, y); }
-	};
-
-	struct SPoint
-	{
-		nodevec2 m_Pos;
-		int m_Final;
-		int m_Give = 0;
-		int m_Hope;
-
-		SPoint() = default;
-		SPoint(vec2 Pos)
-		{
-			m_Pos = Pos;
-		}
-
-		bool operator==(const SPoint& Point)
-		{
-			return m_Pos == Point.m_Pos;
-		}
-
-		void GetHope(const SPoint& Begin, const SPoint& End)
-		{
-			m_Hope = (absolute(Begin.m_Pos.x - End.m_Pos.x) + absolute(Begin.m_Pos.y - End.m_Pos.y)) * 2;
-		}
-
-		inline void GetFinal()
-		{
-			m_Final = m_Give + m_Hope;
-		}
-	};
-
-	struct SNode
-	{
-		SPoint m_Point;
-		SNode* m_pParent;
-		SNode* m_pWinnerChild;
-
-		SNode(const SPoint& Point)
-		{
-			m_Point = Point;
-			m_pParent = nullptr;
-			m_pWinnerChild = nullptr;
-		}
-	};
-}
 
 std::map<AStar::nodevec2, bool> s_CloseList;
 bool CGameClient::CanGo(void *pPoint, void* pFrom)
@@ -816,9 +679,9 @@ void CGameClient::RunAI()
 		vec2 TestPos;
 		do
 		{
-			TestPos = m_LocalCharacterPos + random_direction() * random_float(120.0f, 720.0f);
+			TestPos = m_LocalCharacterPos + AIRandom::random_direction() * AIRandom::random_float(120.0f, 720.0f);
 		}
-		while(m_GameWorld.Collision()->IntersectLine(m_LocalCharacterPos, TestPos, nullptr, nullptr));
+		while(m_GameWorld.Collision()->CheckPoint(TestPos));
 
 		FindPathTo(TestPos);
 		s_LastGoToTime = time_get();
@@ -866,7 +729,7 @@ void CGameClient::RunAI()
 		// fly~~~~ wry~~~
 		if(m_LocalCharacterPos.y > GoToPos.y && str_find(m_aClients[m_aLocalIds[g_Config.m_ClDummy]].m_aClan, "Merc"))
 		{
-			TargetPos = m_LocalCharacterPos - GoToPos;
+			TargetPos = vec2(clamp(m_LocalCharacterPos.x - GoToPos.x, -6.0f, 6.0f), m_LocalCharacterPos.y - GoToPos.y);
 			m_Controls.m_aInputData[g_Config.m_ClDummy].m_Fire = 1;
 		}
 		
@@ -917,14 +780,31 @@ void CGameClient::RunAI()
 	else
 		m_Controls.m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = m_Controls.m_aLastData[g_Config.m_ClDummy].m_WantedWeapon;
 	// infclass attack
+	bool NoMoreFollow = false;
+	int FollowedInfectScore = 2;
+	int TrustPoint = 0;
 	bool SelfInfect = IsInfect(&m_aClients[m_Snap.m_LocalClientId]);
 	for(int i = 0; i < MAX_CLIENTS; i ++)
 	{
+		if(i == m_aLocalIds[g_Config.m_ClDummy])
+			continue;
+
 		if(m_Snap.m_aCharacters[i].m_Active)
 		{
 			bool TargetInfect = IsInfect(&m_aClients[i]);
 			if(TargetInfect == SelfInfect)
 			{
+				if(!SelfInfect && IsDefender(m_aClients[i].m_aClan) > TrustPoint)
+				{
+					ChangeFollow(m_aClients[i].m_aName);
+					TrustPoint = IsDefender(m_aClients[i].m_aClan);
+				}
+				if(SelfInfect && m_Snap.m_apPlayerInfos[i]->m_Score > FollowedInfectScore && !NoMoreFollow)
+				{
+					ChangeFollow(m_aClients[i].m_aName);
+					FollowedInfectScore = m_Snap.m_apPlayerInfos[i]->m_Score;
+				}
+
 				if(SelfInfect && absolute(Client()->GameTick(g_Config.m_ClDummy) - m_Snap.m_aCharacters[i].m_Cur.m_AttackTick) < 3)
 				{
 					// infect help!
@@ -938,6 +818,11 @@ void CGameClient::RunAI()
 						m_Controls.m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = 1; // WEAPON_HAMMER
 				}
 				else continue;
+			}
+			else if(SelfInfect && !TargetInfect && !NoMoreFollow)
+			{
+				ChangeFollow(m_aClients[i].m_aName);
+				NoMoreFollow = true;
 			}
 			vec2 PlayerPos = vec2(m_Snap.m_aCharacters[i].m_Cur.m_X, m_Snap.m_aCharacters[i].m_Cur.m_Y);
 			if(m_GameWorld.Collision()->IntersectLine(m_LocalCharacterPos, PlayerPos, nullptr, nullptr))
@@ -956,7 +841,6 @@ void CGameClient::RunAI()
 				}
 				else if(SelfInfect && !TargetInfect)
 				{
-					ChangeFollow(m_aClients[i].m_aName);
 					m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 1;
 					if(m_Snap.m_pLocalCharacter->m_HookState == HOOK_GRABBED && distance(HookPos, PlayerPos) > 64.0f)
 						m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 0;

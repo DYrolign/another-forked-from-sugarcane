@@ -2266,6 +2266,8 @@ if(CLIENT)
     render.h
     render_map.cpp
     skin.h
+    things.cpp
+    things.h
     ui.cpp
     ui.h
     ui_listbox.cpp
