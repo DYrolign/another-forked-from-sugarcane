@@ -439,6 +439,316 @@ static double s_LastJumpTime = 0;
 static char s_FollowName[16] = "甘箨Bamcane";
 static vec2 s_GoToPos;
 static int64_t s_LastGoToTime = 0;
+namespace AStar
+{
+	class nodevec2
+	{
+	public:
+		int x;
+		int y;
+
+		nodevec2() = default;
+		nodevec2(vec2 pos) :
+			x(pos.x), y(pos.y)
+		{
+		}
+		nodevec2(int nx, int ny) :
+			x(nx), y(ny)
+		{
+		}
+
+		nodevec2 operator-() const { return nodevec2(-x, -y); }
+		nodevec2 operator-(const nodevec2 &vec) const { return nodevec2(x - vec.x, y - vec.y); }
+		nodevec2 operator+(const nodevec2 &vec) const { return nodevec2(x + vec.x, y + vec.y); }
+		nodevec2 operator*(const int rhs) const { return nodevec2(x * rhs, y * rhs); }
+		nodevec2 operator*(const nodevec2 &vec) const { return nodevec2(x * vec.x, y * vec.y); }
+		nodevec2 operator/(const int rhs) const { return nodevec2(x / rhs, y / rhs); }
+		nodevec2 operator/(const nodevec2 &vec) const { return nodevec2(x / vec.x, y / vec.y); }
+
+		const nodevec2 &operator+=(const nodevec2 &vec)
+		{
+			x += vec.x;
+			y += vec.y;
+			return *this;
+		}
+		const nodevec2 &operator-=(const nodevec2 &vec)
+		{
+			x -= vec.x;
+			y -= vec.y;
+			return *this;
+		}
+		const nodevec2 &operator*=(const int rhs)
+		{
+			x *= rhs;
+			y *= rhs;
+			return *this;
+		}
+		const nodevec2 &operator*=(const nodevec2 &vec)
+		{
+			x *= vec.x;
+			y *= vec.y;
+			return *this;
+		}
+		const nodevec2 &operator/=(const int rhs)
+		{
+			x /= rhs;
+			y /= rhs;
+			return *this;
+		}
+		const nodevec2 &operator/=(const nodevec2 &vec)
+		{
+			x /= vec.x;
+			y /= vec.y;
+			return *this;
+		}
+
+		bool operator==(const nodevec2 &vec) const { return x == vec.x && y == vec.y; } //TODO: do this with an eps instead
+		bool operator!=(const nodevec2 &vec) const { return x != vec.x || y != vec.y; }
+		bool operator<(const nodevec2 &vec) const { return x < vec.x || (x == vec.x && y < vec.y); }
+
+		int &operator[](const int index) { return index ? y : x; }
+		vec2 operator()() { return vec2(x, y); }
+	};
+
+	struct SPoint
+	{
+		nodevec2 m_Pos;
+		int m_Final;
+		int m_Give = 0;
+		int m_Hope;
+
+		SPoint() = default;
+		SPoint(vec2 Pos)
+		{
+			m_Pos = Pos;
+		}
+
+		bool operator==(const SPoint& Point)
+		{
+			return m_Pos == Point.m_Pos;
+		}
+
+		void GetHope(const SPoint& Begin, const SPoint& End)
+		{
+			m_Hope = (absolute(Begin.m_Pos.x - End.m_Pos.x) + absolute(Begin.m_Pos.y - End.m_Pos.y)) * 2;
+		}
+
+		inline void GetFinal()
+		{
+			m_Final = m_Give + m_Hope;
+		}
+	};
+
+	struct SNode
+	{
+		SPoint m_Point;
+		SNode* m_pParent;
+		SNode* m_pWinnerChild;
+
+		SNode(const SPoint& Point)
+		{
+			m_Point = Point;
+			m_pParent = nullptr;
+			m_pWinnerChild = nullptr;
+		}
+	};
+}
+
+std::map<AStar::nodevec2, bool> s_CloseList;
+bool CGameClient::CanGo(void *pPoint, void* pFrom)
+{
+	AStar::SPoint Point = *((AStar::SPoint *) pPoint);
+	AStar::SPoint *pFromPoint = ((AStar::SPoint *) pFrom);
+	if(s_CloseList.count(Point.m_Pos))
+		return false;
+	if(Point.m_Pos.x < 0 || Point.m_Pos.x >= m_GameWorld.Collision()->GetWidth())
+		return false;
+	if(m_GameWorld.Collision()->CheckPoint((Point.m_Pos * 32)() + vec2(16.0f, 16.0f)))
+		return false;
+	if(!IsInfect(&m_aClients[m_aLocalIds[g_Config.m_ClDummy]]) && m_GameWorld.Collision()->IsTeleportWeapon(m_GameWorld.Collision()->GetMapIndex((Point.m_Pos * 32)() + vec2(16.0f, 16.0f))))
+		return false;
+	if(m_GameWorld.Collision()->GetTile(Point.m_Pos.x * 32 + 16, Point.m_Pos.y * 32 + 16) == TILE_DEATH)
+		return false;
+	if(pFromPoint)
+	{
+		if(m_GameWorld.Collision()->IntersectLine((pFromPoint->m_Pos * 32)() + vec2(16.0f, 16.0f), (Point.m_Pos * 32)() + vec2(16.0f, 16.0f), nullptr, nullptr))
+			return false;
+	}
+	return true;
+}
+
+static AStar::SNode *s_pRootNode = nullptr;
+static AStar::SNode *s_pCurrentNode = nullptr;
+void CGameClient::FindPathTo(vec2 GoTo)
+{
+	AStar::SPoint EndPoint(GoTo / 32);
+	if(AStar::nodevec2(GoTo / 32) == AStar::nodevec2(s_GoToPos / 32))
+		return;
+	if(!CanGo(&EndPoint, nullptr))
+		return;
+
+	s_GoToPos = GoTo;
+
+	AStar::SNode *pCurrent = s_pRootNode;
+	AStar::SNode *pTemp = nullptr;
+	{
+		pCurrent = s_pRootNode;
+		while(pCurrent)
+		{
+			pTemp = pCurrent->m_pWinnerChild;
+			delete pCurrent;
+			pCurrent = pTemp;
+		}
+	}
+
+	AStar::SPoint BeginPoint(m_LocalCharacterPos / 32);
+	s_pRootNode = new AStar::SNode(BeginPoint);
+	pCurrent = s_pRootNode;
+
+	std::vector<AStar::SNode*> CheckArray;
+	CheckArray.clear();
+	s_CloseList.clear();
+
+	s_pRootNode->m_Point.GetHope(s_pRootNode->m_Point, EndPoint);
+	s_pRootNode->m_Point.m_Give = 0;
+
+	bool FindBest = false;
+	while(1)
+	{
+		for(int i = 0; i < 8; i++)
+		{
+			pTemp = new AStar::SNode(pCurrent->m_Point);
+			pTemp->m_Point.m_Give = pCurrent->m_Point.m_Give;
+			/*
+				jump give 3,
+				just left or right move give 2
+				just down give 1
+			*/
+			switch(i)
+			{
+				// up
+				case 0:
+				{
+					pTemp->m_Point.m_Pos.y--;
+					pTemp->m_Point.m_Give += 3;
+				}
+				break;
+				// left
+				case 1:
+				{
+					pTemp->m_Point.m_Pos.x--;
+					pTemp->m_Point.m_Give += 2;
+				}
+				break;
+				// right
+				case 2:
+				{
+					pTemp->m_Point.m_Pos.x++;
+					pTemp->m_Point.m_Give += 2;
+				}
+				break;
+				// down
+				case 3:
+				{
+					pTemp->m_Point.m_Pos.y++;
+					pTemp->m_Point.m_Give += 2;
+				}
+				break;
+				// top left
+				case 4:
+				{
+					pTemp->m_Point.m_Pos.x--;
+					pTemp->m_Point.m_Pos.y--;
+					pTemp->m_Point.m_Give += 4;
+				}
+				break;
+				// top right
+				case 5:
+				{
+					pTemp->m_Point.m_Pos.x++;
+					pTemp->m_Point.m_Pos.y--;
+					pTemp->m_Point.m_Give += 4;
+				}
+				break;
+				// bottom left
+				case 6:
+				{
+					pTemp->m_Point.m_Pos.x--;
+					pTemp->m_Point.m_Pos.y++;
+					pTemp->m_Point.m_Give += 3;
+				}
+				break;
+				// bottom right
+				case 7:
+				{
+					pTemp->m_Point.m_Pos.x++;
+					pTemp->m_Point.m_Pos.y++;
+					pTemp->m_Point.m_Give += 3;
+				}
+				break;
+			}
+
+			if(CanGo(&pTemp->m_Point, pCurrent))
+			{
+				pTemp->m_Point.GetHope(pTemp->m_Point, EndPoint);
+				pTemp->m_Point.GetFinal();
+
+				pTemp->m_pParent = pCurrent;
+				s_CloseList[pTemp->m_Point.m_Pos] = true;
+
+				CheckArray.push_back(pTemp);
+			}
+			else
+			{
+				delete pTemp;
+				pTemp = nullptr;
+			}
+		}
+
+		auto Min = std::min_element(CheckArray.begin(), CheckArray.end(), [&](AStar::SNode *pNodeA, AStar::SNode *pNodeB)
+		{
+			return pNodeA->m_Point.m_Final < pNodeB->m_Point.m_Final;
+		});
+
+		pCurrent = *Min;
+		CheckArray.erase(Min);
+
+		if(pCurrent->m_Point == EndPoint)
+		{
+			FindBest = true;
+			break;
+		}
+
+		if(CheckArray.empty())
+			break;
+	}
+
+	if(FindBest)
+	{
+		while(1)
+		{
+			if(!pCurrent->m_pParent)
+				break;
+
+			pCurrent->m_pParent->m_pWinnerChild = pCurrent;
+			pCurrent = pCurrent->m_pParent;
+		}
+
+		for(auto Iter = CheckArray.begin(); Iter != CheckArray.end(); Iter++)
+		{
+			delete *Iter;
+			CheckArray.erase(Iter);
+			Iter--;
+		}
+		s_pCurrentNode = s_pRootNode;
+	}
+	else
+	{
+		s_pCurrentNode = nullptr;
+		dbg_msg("AI", "Path not found!!!");
+	}
+}
+
 void CGameClient::NewAIValue(const char* pValueName, int DefaultValue)
 {
 	s_AIValue[pValueName] = DefaultValue;
@@ -459,6 +769,9 @@ int CGameClient::GetAIValue(const char* pValueName)
 
 void CGameClient::ChangeFollow(const char* pFollow)
 {
+	if(str_comp(s_FollowName, pFollow) == 0)
+		return;
+
 	dbg_msg("AI", "change to follow %s", s_FollowName);
 	str_copy(s_FollowName, pFollow);
 }
@@ -478,7 +791,7 @@ void CGameClient::RunAI()
 				if(m_Snap.m_aCharacters[i].m_Active)
 				{
 					FollowID = i;
-					s_GoToPos = vec2(m_Snap.m_aCharacters[i].m_Cur.m_X, m_Snap.m_aCharacters[i].m_Cur.m_Y);
+					FindPathTo(vec2(m_Snap.m_aCharacters[i].m_Cur.m_X, m_Snap.m_aCharacters[i].m_Cur.m_Y));
 				}
 			}
 			break;
@@ -488,10 +801,17 @@ void CGameClient::RunAI()
 
 		}
 	}
-		
+
+	if(s_pCurrentNode && s_pCurrentNode->m_pWinnerChild)
+	{
+		if(distance(m_LocalCharacterPos, (s_pCurrentNode->m_pWinnerChild->m_Point.m_Pos * 32)() + vec2(16.0f, 16.0f)) < 32.0f)
+			s_pCurrentNode = s_pCurrentNode->m_pWinnerChild;
+		else if(distance(m_LocalCharacterPos, (s_pCurrentNode->m_pWinnerChild->m_Point.m_Pos * 32)() + vec2(16.0f, 16.0f)) > 48.0f)
+			FindPathTo(s_GoToPos);
+	}
 	// random go to
 	bool NeedReset = absolute(s_GoToPos.y - m_LocalCharacterPos.y) > 320.0f;
-	if((s_LastGoToTime + time_freq() * 5 < time_get() || NeedReset || distance(m_LocalCharacterPos, s_GoToPos) < 64.0f) && FollowID == -1)
+	if((s_LastGoToTime + time_freq() * 5 < time_get() || NeedReset || !s_pCurrentNode || distance(m_LocalCharacterPos, s_GoToPos) < 64.0f) && FollowID == -1)
 	{
 		vec2 TestPos;
 		do
@@ -500,21 +820,30 @@ void CGameClient::RunAI()
 		}
 		while(m_GameWorld.Collision()->IntersectLine(m_LocalCharacterPos, TestPos, nullptr, nullptr));
 
-		s_GoToPos = TestPos;
+		FindPathTo(TestPos);
 		s_LastGoToTime = time_get();
-		dbg_msg("AI", "status go to position %.2f, %.2f", s_GoToPos.x, s_GoToPos.y);
+	}
+
+	vec2 GoToPos;
+	if(!s_pCurrentNode || !s_pCurrentNode->m_pWinnerChild)
+	{
+		GoToPos = s_GoToPos;
+	}
+	else
+	{
+		GoToPos = (s_pCurrentNode->m_pWinnerChild->m_Point.m_Pos * 32)() + vec2(16.0f, 16.0f);
 	}
 
 	vec2 HookPos = vec2(m_Snap.m_pLocalCharacter->m_HookX, m_Snap.m_pLocalCharacter->m_HookY);
 
 	mem_zero(&m_Controls.m_aInputData[g_Config.m_ClDummy], sizeof(m_Controls.m_aInputData[g_Config.m_ClDummy]));
 	
-	float DistanceX = absolute(s_GoToPos.x - m_LocalCharacterPos.x);
-	float DistanceY = absolute(s_GoToPos.y - m_LocalCharacterPos.y);
+	float DistanceX = absolute(GoToPos.x - m_LocalCharacterPos.x);
+	float DistanceY = absolute(GoToPos.y - m_LocalCharacterPos.y);
 	
-	if(DistanceX > 64.0f)
+	if(DistanceX > 2.0f)
 	{
-		if(m_LocalCharacterPos.x < s_GoToPos.x)
+		if(m_LocalCharacterPos.x < GoToPos.x)
 		{
 			m_Controls.m_aInputDirectionLeft[g_Config.m_ClDummy] = 0;
 			m_Controls.m_aInputDirectionRight[g_Config.m_ClDummy] = 1;
@@ -531,12 +860,20 @@ void CGameClient::RunAI()
 		m_Controls.m_aInputDirectionRight[g_Config.m_ClDummy] = 0;
 	}
 
-	if(DistanceY > 64.0f)
+	vec2 TargetPos = GoToPos - m_LocalCharacterPos;
+	if(DistanceY > 24.0f)
 	{
+		// fly~~~~ wry~~~
+		if(m_LocalCharacterPos.y > GoToPos.y && str_find(m_aClients[m_aLocalIds[g_Config.m_ClDummy]].m_aClan, "Merc"))
+		{
+			TargetPos = m_LocalCharacterPos - GoToPos;
+			m_Controls.m_aInputData[g_Config.m_ClDummy].m_Fire = 1;
+		}
+		
 		if(m_Snap.m_pLocalCharacter->m_Jumped & 3)
 		{
 			vec2 OutPos;
-			if(m_GameWorld.Collision()->IntersectLine(m_LocalCharacterPos, vec2(s_GoToPos.x + m_Snap.m_pLocalCharacter->m_Direction * 32.0f, s_GoToPos.y), nullptr, &OutPos))
+			if(m_GameWorld.Collision()->IntersectLine(m_LocalCharacterPos, vec2(GoToPos.x + m_Snap.m_pLocalCharacter->m_Direction * 32.0f, GoToPos.y), nullptr, &OutPos))
 			{
 				m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX = 0;
 				m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY = m_aTuning[g_Config.m_ClDummy].m_HookLength * 0.8f;
@@ -553,7 +890,7 @@ void CGameClient::RunAI()
 		}
 		else
 		{
-			if(m_LocalCharacterPos.y > s_GoToPos.y
+			if(m_LocalCharacterPos.y > GoToPos.y
 				&& ((s_LastJumpTime + 0.2f) < time_get() / (float) time_freq()))
 			{
 				m_Controls.m_aInputData[g_Config.m_ClDummy].m_Jump = 1;
@@ -561,7 +898,6 @@ void CGameClient::RunAI()
 			}
 		}
 	}
-	vec2 TargetPos = s_GoToPos - m_LocalCharacterPos;
 	m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX = TargetPos.x;
 	m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY = TargetPos.y;
 

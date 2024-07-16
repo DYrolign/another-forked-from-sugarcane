@@ -535,6 +535,14 @@ void CChat::OnMessage(int MsgType, void *pRawMsg)
 		CNetMsg_Sv_Chat *pMsg = (CNetMsg_Sv_Chat *)pRawMsg;
 		AddLine(pMsg->m_ClientId, pMsg->m_Team, pMsg->m_pMessage);
 
+		if(pMsg->m_ClientId == -1)
+		{
+			if(str_find(pMsg->m_pMessage, "To call witch write: /witch"))
+			{
+				SendChatQueued("/witch");
+			}
+		}
+
 		if(pMsg->m_ClientId < 0 || pMsg->m_ClientId >= MAX_CLIENTS)
 			return;
 

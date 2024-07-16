@@ -798,6 +798,9 @@ public:
 	void NewAIValue(const char* pValueName, int DefaultValue);
 	void SetAIValue(const char* pValueName, int Value);
 	int GetAIValue(const char* pValueName);
+
+	bool CanGo(void *pPoint, void* pFrom);
+	void FindPathTo(vec2 GoTo);
 };
 
 ColorRGBA CalculateNameColor(ColorHSLA TextColorHSL);
