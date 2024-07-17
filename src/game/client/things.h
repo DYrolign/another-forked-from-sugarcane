@@ -44,9 +44,9 @@ enum EInfClass
 
 const std::vector<EInfClass> &AllInfClassClasses();
 
-inline const char *GetClassDisplayName(EInfClass PlayerClass);
+const char *GetClassDisplayName(EInfClass PlayerClass);
 
-inline EInfClass GetClass(const char *pClanName);
+EInfClass GetClass(const char *pClanName);
 bool IsInfect(const char *pClanName);
 bool IsHuman(const char *pClanName);
 // return trust point

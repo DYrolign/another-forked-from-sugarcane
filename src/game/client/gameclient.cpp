@@ -704,7 +704,7 @@ void CGameClient::RunAI()
 	float DistanceX = absolute(GoToPos.x - m_LocalCharacterPos.x);
 	float DistanceY = absolute(GoToPos.y - m_LocalCharacterPos.y);
 	
-	if(DistanceX > 2.0f)
+	if(DistanceX > 1.0f)
 	{
 		if(m_LocalCharacterPos.x < GoToPos.x)
 		{
@@ -798,21 +798,25 @@ void CGameClient::RunAI()
 				{
 					ChangeFollow(m_aClients[i].m_aName);
 					TrustPoint = IsDefender(m_aClients[i].m_aClan);
+					continue;
 				}
-				if(SelfInfect && m_Snap.m_apPlayerInfos[i]->m_Score > FollowedInfectScore && !NoMoreFollow)
+				else if(SelfInfect)
 				{
-					ChangeFollow(m_aClients[i].m_aName);
-					FollowedInfectScore = m_Snap.m_apPlayerInfos[i]->m_Score;
-				}
-
-				if(SelfInfect && absolute(Client()->GameTick(g_Config.m_ClDummy) - m_Snap.m_aCharacters[i].m_Cur.m_AttackTick) < 3)
-				{
-					// infect help!
-					if(str_find(m_aClients[m_Snap.m_LocalClientId].m_aClan, "Boomer"))
-						continue;
+					if(m_Snap.m_apPlayerInfos[i]->m_Score > FollowedInfectScore && !NoMoreFollow)
+					{
+						ChangeFollow(m_aClients[i].m_aName);
+						FollowedInfectScore = m_Snap.m_apPlayerInfos[i]->m_Score;
+					}
+					if(absolute(Client()->GameTick(g_Config.m_ClDummy) - m_Snap.m_aCharacters[i].m_Cur.m_AttackTick) < 3)
+					{
+						// infect help!
+						if(GetClass(m_aClients[m_Snap.m_LocalClientId].m_aClan) == EInfClass::PLAYERCLASS_BOOMER)
+							continue;
+					}
+					else continue;
 				}
 				// Medic help!
-				else if(str_find(m_aClients[m_Snap.m_LocalClientId].m_aClan, "Medic"))
+				else if(GetClass(m_aClients[m_Snap.m_LocalClientId].m_aClan) == EInfClass::PLAYERCLASS_MEDIC)
 				{
 					if(m_Controls.m_aInputData[g_Config.m_ClDummy].m_WantedWeapon != 1)
 						m_Controls.m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = 1; // WEAPON_HAMMER
@@ -846,7 +850,7 @@ void CGameClient::RunAI()
 						m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook = 0;
 					break;
 				}
-				else if(str_find(m_aClients[m_Snap.m_LocalClientId].m_aClan, "Medic"))
+				else if(GetClass(m_aClients[m_Snap.m_LocalClientId].m_aClan) == EInfClass::PLAYERCLASS_MEDIC)
 				{
 					m_Controls.m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = GetWantedWeapon(&m_aClients[m_Snap.m_LocalClientId]) + 1;
 					continue;
