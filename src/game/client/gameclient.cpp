@@ -1401,7 +1401,6 @@ void CGameClient::OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dumm
 		Client()->EnterGame(Conn);
 		m_Chat.EnableMode(0);
 		m_Chat.SendChatQueued("/alwaysrandom 1");
-		m_Chat.SendChatQueued("你好～这里是甘蔗aw! 是甘箨的AI呢!");
 	}
 	else if(MsgId == NETMSGTYPE_SV_EMOTICON)
 	{
