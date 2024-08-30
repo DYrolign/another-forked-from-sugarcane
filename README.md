@@ -1,4 +1,4 @@
-Forked from the bamcane's reposity 
+Forked from the bamcane's repository 
 
 
 Old sugarcane
